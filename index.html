@@ -102,6 +102,13 @@
   #model-list .model-item.selected .model-time { color: #dfe4ff; }
   #model-list .model-empty { padding: 5px 7px; color: #8b8f98; }
   #root-path { font-size: 11px; color: #6d7178; word-break: break-all; }
+  #root-row { display: flex; align-items: baseline; gap: 6px; }
+  #root-row #root-path { flex: 1; min-width: 0; }
+  .link-btn { flex-shrink: 0; background: none; border: none; padding: 0; font-size: 11px; color: #8ea2ff; cursor: pointer; }
+  .link-btn:hover { text-decoration: underline; background: none; }
+  #root-editor { display: flex; flex-direction: column; gap: 6px; }
+  #root-editor[hidden] { display: none; }
+  #root-input { font: inherit; font-size: 12px; color: inherit; background: #303339; border: 1px solid #44474e; border-radius: 6px; padding: 6px 8px; width: 100%; box-sizing: border-box; }
   /* --- AI chat panel (left) --- */
   #chat-panel { width: 380px; flex-shrink: 0; background: #202228; border-right: 1px solid #34363c; display: flex; flex-direction: column; min-height: 0; }
   #chat-panel.collapsed { display: none; }
@@ -259,7 +266,18 @@
   </div>
   <div id="sidebar">
     <h1>3D Mark Tool</h1>
-    <div id="root-path"></div>
+    <div id="root-row">
+      <div id="root-path"></div>
+      <button id="root-change-btn" class="link-btn" title="Choose the folder that contains your model projects">Change…</button>
+    </div>
+    <div id="root-editor" hidden>
+      <input type="text" id="root-input" placeholder="/path/to/models" spellcheck="false" />
+      <div class="row">
+        <button id="root-browse-btn">Browse…</button>
+        <button id="root-set-btn">Set</button>
+        <button id="root-cancel-btn">Cancel</button>
+      </div>
+    </div>
     <div>
       <small class="label">Project</small>
       <select id="project-select"></select>

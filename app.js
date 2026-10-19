@@ -186,10 +186,14 @@ updateModeUI();
 
 // --- Data loading -----------------------------------------------------------
 
+let currentRoot = "";
+
 async function fetchRoot() {
   const res = await fetch("/api/root", { cache: "no-store" });
   const data = await res.json();
+  currentRoot = data.root;
   rootPathEl.textContent = `Library: ${data.root}`;
+  rootPathEl.title = data.root;
 }
 
 async function fetchProjects() {
@@ -1307,6 +1311,60 @@ async function reloadProjectsAndModel() {
 }
 
 document.getElementById("reload-btn").onclick = reloadProjectsAndModel;
+
+// --- Library folder ("work folder") -------------------------------------------
+
+const rootEditor = document.getElementById("root-editor");
+const rootInput = document.getElementById("root-input");
+
+function toggleRootEditor(open) {
+  rootEditor.hidden = !open;
+  if (open) {
+    rootInput.value = currentRoot;
+    rootInput.focus();
+    rootInput.select();
+  }
+}
+
+async function setLibraryRoot(path) {
+  const res = await fetch("/api/root", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ root: path }),
+  });
+  const data = await res.json();
+  if (!data.ok) {
+    setStatus(data.error || "Could not set the library folder.", false);
+    return;
+  }
+  toggleRootEditor(false);
+  await fetchRoot();
+  history.replaceState(null, "", location.pathname);
+  const projects = await populateProjectSelect(null);
+  if (!projects.length) {
+    modelList.innerHTML = '<div class="model-empty">No .stl files</div>';
+    setStatus("No .stl files found in the new library folder.", false);
+    return;
+  }
+  await populateModelSelect(projectSelect.value, null);
+  if (modelSelect.value) await loadModel(projectSelect.value, modelSelect.value, false);
+  setStatus(`Library folder set to ${data.root}.`);
+}
+
+document.getElementById("root-change-btn").onclick = () => toggleRootEditor(rootEditor.hidden);
+document.getElementById("root-cancel-btn").onclick = () => toggleRootEditor(false);
+document.getElementById("root-set-btn").onclick = () => setLibraryRoot(rootInput.value.trim());
+rootInput.addEventListener("keydown", (e) => {
+  e.stopPropagation(); // keep typing out of the viewport shortcuts
+  if (e.key === "Enter") setLibraryRoot(rootInput.value.trim());
+  else if (e.key === "Escape") toggleRootEditor(false);
+});
+document.getElementById("root-browse-btn").onclick = async () => {
+  const res = await fetch("/api/root/browse", { method: "POST", body: "{}" });
+  const data = await res.json();
+  if (!data.ok) setStatus(data.error || "Folder picker failed.", false);
+  else if (data.path) rootInput.value = data.path;
+};
 
 // --- Bridge for the AI chat panel (chat.js) ----------------------------------
 

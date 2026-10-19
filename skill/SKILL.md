@@ -26,6 +26,8 @@ contains their various project subfolders, e.g. `~/3dmodels`), run:
 
     mark-tool --set-root "/path/to/their/models/library"
 
+The user can also change it in the browser: **Change…** next to the library path at the
+top of the sidebar (type a path or **Browse…** for the macOS folder picker, then **Set**).
 This is a one-time setup per machine — it's remembered in
 `config.json` next to the app and used by every future session. Only re-run
 `--set-root` if the user explicitly wants to change it.

@@ -38,6 +38,38 @@ def load_root():
 
 
 ROOT = load_root()
+
+
+def set_root(path):
+    """Point the library at another folder, persisted in config.json."""
+    global ROOT
+    root = Path(path or "").expanduser().resolve()
+    if not path or not root.is_dir():
+        raise ValueError(f"Not a folder: {path}")
+    cfg = {}
+    if CONFIG_FILE.exists():
+        try:
+            cfg = json.loads(CONFIG_FILE.read_text())
+        except Exception:
+            pass
+    cfg["root"] = str(root)
+    CONFIG_FILE.write_text(json.dumps(cfg, indent=2))
+    ROOT = root
+    return root
+
+
+def browse_folder():
+    """Native folder picker (macOS only). Returns the chosen path, or None."""
+    if not shutil.which("osascript"):
+        raise RuntimeError("Folder picker is only available on macOS; type the path instead")
+    script = (
+        f'POSIX path of (choose folder with prompt "Choose the models library folder" '
+        f'default location (POSIX file {json.dumps(str(ROOT))}))'
+    )
+    proc = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, timeout=600)
+    if proc.returncode != 0:
+        return None  # cancelled
+    return proc.stdout.strip().rstrip("/") or "/"
 PORT = int(os.environ.get("MARK_TOOL_PORT", DEFAULT_PORT))
 
 
@@ -313,6 +345,17 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if parsed.path == "/api/settings":
                 ai.save_settings(body)
                 self.send_json(ai.get_settings(mask=True))
+                return
+            if parsed.path == "/api/root":
+                try:
+                    root = set_root(body.get("root"))
+                except ValueError as e:
+                    self.send_json({"ok": False, "error": str(e)}, status=400)
+                    return
+                self.send_json({"ok": True, "root": str(root)})
+                return
+            if parsed.path == "/api/root/browse":
+                self.send_json({"ok": True, "path": browse_folder()})
                 return
             if parsed.path == "/api/settings/test":
                 self.send_json({"ok": True, "message": ai.test_connection()})
