@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>3D Mark Tool</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #1b1d22; color: #e6e6e6; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  #app { display: flex; height: 100%; }
+  #viewport { flex: 1; position: relative; }
+  #toolbar { position: absolute; top: 0; left: 0; right: 0; height: 38px; display: flex; align-items: center; gap: 10px; padding: 0 10px; background: #24262c; border-bottom: 1px solid #34363c; font-size: 12px; z-index: 2; }
+  #toolbar .tb-group { display: flex; align-items: center; gap: 6px; }
+  #toolbar [hidden] { display: none; }
+  #toolbar .tb-icon { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 26px; padding: 0; color: #8b8f98; }
+  #toolbar .tb-icon:not(.active) svg { opacity: 0.3; }
+  #toolbar .tb-icon.active { color: #e6e6e6; background: #3a3d45; border-color: #5a5e66; }
+  #toolbar .tb-btn { padding: 4px 10px; font-size: 12px; }
+  #toolbar .tb-btn.active { background: #3d6fd6; border-color: #3d6fd6; }
+  #slicer-panel { position: absolute; top: 48px; right: 10px; z-index: 2; width: 250px; background: rgba(36,38,44,0.96); border: 1px solid #44474e; border-radius: 8px; padding: 10px; font-size: 12px; display: flex; flex-direction: column; gap: 8px; }
+  #slicer-panel[hidden] { display: none; }
+  #slicer-panel .sp-head { display: flex; align-items: center; justify-content: space-between; font-weight: 600; }
+  #slicer-panel .sp-head button { background: transparent; border: none; padding: 0 4px; color: #8b8f98; font-size: 14px; }
+  #slicer-panel .sp-row { display: flex; align-items: center; gap: 6px; }
+  #slicer-panel .sp-row > label { width: 64px; color: #8b8f98; flex-shrink: 0; }
+  #slicer-panel input[type="number"] { width: 80px; padding: 4px 6px; }
+  #slice-planes { display: flex; }
+  #slice-planes button { padding: 4px 10px; border-radius: 0; margin-left: -1px; }
+  #slice-planes button:first-child { border-radius: 6px 0 0 6px; margin-left: 0; }
+  #slice-planes button:last-child { border-radius: 0 6px 6px 0; }
+  #slice-planes button.active { background: #3d6fd6; border-color: #3d6fd6; position: relative; }
+  #slicer-panel .sp-note { color: #8b8f98; font-size: 11px; line-height: 1.4; }
+  #slice-result { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #7fd6a0; word-break: break-all; }
+  #slice-result[hidden] { display: none; }
+  #slice-result button { padding: 2px 8px; font-size: 11px; flex-shrink: 0; }
+  #toolbar .tb-sep { width: 1px; align-self: stretch; margin: 8px 2px; background: #34363c; }
+  #toolbar .tb-label { color: #8b8f98; }
+  #toolbar select { width: auto; padding: 4px 6px; }
+  #toolbar input[type="number"] { width: 56px; padding: 4px 6px; }
+  #toolbar .tb-btn { padding: 4px 10px; font-size: 12px; }
+  #toolbar .tb-btn.active { background: #3d6fd6; border-color: #3d6fd6; }
+  #slicer-panel { position: absolute; top: 48px; right: 10px; z-index: 2; width: 250px; background: rgba(36,38,44,0.96); border: 1px solid #44474e; border-radius: 8px; padding: 10px; font-size: 12px; display: flex; flex-direction: column; gap: 8px; }
+  #slicer-panel[hidden] { display: none; }
+  #slicer-panel .sp-head { display: flex; align-items: center; justify-content: space-between; font-weight: 600; }
+  #slicer-panel .sp-head button { background: transparent; border: none; padding: 0 4px; color: #8b8f98; font-size: 14px; }
+  #slicer-panel .sp-row { display: flex; align-items: center; gap: 6px; }
+  #slicer-panel .sp-row > label { width: 64px; color: #8b8f98; flex-shrink: 0; }
+  #slicer-panel input[type="number"] { width: 80px; padding: 4px 6px; }
+  #slice-planes { display: flex; }
+  #slice-planes button { padding: 4px 10px; border-radius: 0; margin-left: -1px; }
+  #slice-planes button:first-child { border-radius: 6px 0 0 6px; margin-left: 0; }
+  #slice-planes button:last-child { border-radius: 0 6px 6px 0; }
+  #slice-planes button.active { background: #3d6fd6; border-color: #3d6fd6; position: relative; }
+  #slicer-panel .sp-note { color: #8b8f98; font-size: 11px; line-height: 1.4; }
+  #slice-result { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #7fd6a0; word-break: break-all; }
+  #slice-result[hidden] { display: none; }
+  #slice-result button { padding: 2px 8px; font-size: 11px; flex-shrink: 0; }
+  #toolbar .tb-sep { width: 1px; align-self: stretch; margin: 8px 2px; background: #34363c; }
+  #canvas-host { position: absolute; inset: 38px 0 0 0; }
+  #axis-legend { position: absolute; bottom: 10px; left: 10px; background: rgba(0,0,0,0.5); padding: 5px 10px; border-radius: 6px; font-size: 12px; pointer-events: none; }
+  #hint { position: absolute; top: 48px; left: 10px; background: rgba(0,0,0,0.5); padding: 6px 10px; border-radius: 6px; font-size: 12px; pointer-events: none; max-width: 60%; }
+  #notes-panel { position: absolute; top: 84px; left: 10px; width: 260px; max-height: calc(100% - 98px); overflow-y: auto; background: rgba(0,0,0,0.55); border-radius: 8px; padding: 8px 10px; font-size: 12px; pointer-events: none; display: none; }
+  #notes-panel .note-row { display: flex; gap: 6px; align-items: flex-start; padding: 3px 0; }
+  #notes-panel .badge { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; margin-top: 1px; border-radius: 50%; font-size: 10px; font-weight: 700; color: #1b1d22; }
+  #notes-panel .text { color: #e6e6e6; word-break: break-word; }
+  #sidebar { width: 340px; flex-shrink: 0; background: #24262c; border-left: 1px solid #34363c; display: flex; flex-direction: column; padding: 14px; gap: 10px; overflow-y: auto; }
+  h1 { font-size: 15px; margin: 0 0 2px; }
+  select, button, textarea, input[type="number"] { font: inherit; color: inherit; background: #303339; border: 1px solid #44474e; border-radius: 6px; padding: 6px 8px; }
+  select { width: 100%; }
+  button { cursor: pointer; }
+  button:hover { background: #3a3d45; }
+  button:active { background: #2b2d33; }
+  button.primary { background: #3d6fd6; border-color: #3d6fd6; }
+  button.primary:hover { background: #4a7bde; }
+  .row { display: flex; gap: 8px; }
+  .row > * { flex: 1; }
+  #mode-row { display: flex; gap: 12px; font-size: 12px; align-items: center; }
+  #mode-row label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+  #face-tolerance-row { display: none; font-size: 12px; align-items: center; gap: 8px; }
+  #face-tolerance-row input { width: 64px; }
+  #pins { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+  .pin-card { background: #2c2f36; border: 1px solid #3a3d45; border-radius: 8px; padding: 8px; }
+  .pin-card .head { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+  .pin-card .num { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; font-size: 11px; font-weight: 700; color: #1b1d22; flex-shrink: 0; }
+  .pin-card .type { font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: #8b8f98; flex-shrink: 0; }
+  .pin-card .coords { font-size: 11px; color: #9aa0aa; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; flex: 1; }
+  .pin-card textarea { width: 100%; resize: vertical; min-height: 40px; margin-top: 4px; }
+  .pin-card .del { background: transparent; border: none; color: #d67878; font-size: 13px; padding: 2px 6px; flex-shrink: 0; }
+  .pin-card .del:hover { color: #f09a9a; background: transparent; }
+  #status { font-size: 12px; min-height: 16px; color: #7fd6a0; }
+  #empty { font-size: 12px; color: #8b8f98; }
+  hr { border: none; border-top: 1px solid #34363c; margin: 4px 0; }
+  small.label { display: block; font-size: 11px; color: #8b8f98; margin-bottom: 3px; }
+  #model-list { max-height: 260px; overflow-y: auto; background: #303339; border: 1px solid #44474e; border-radius: 6px; padding: 3px; outline: none; }
+  #model-list:focus-visible { border-color: #6b8afd; }
+  #model-list .model-item { display: flex; justify-content: space-between; gap: 8px; padding: 5px 7px; border-radius: 4px; cursor: pointer; }
+  #model-list .model-item:hover { background: #3a3d44; }
+  #model-list .model-item.selected { background: #3d5afe; color: #fff; }
+  #model-list .model-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #model-list .model-time { flex-shrink: 0; font-size: 11px; color: #8b8f98; }
+  #model-list .model-item.selected .model-time { color: #dfe4ff; }
+  #model-list .model-empty { padding: 5px 7px; color: #8b8f98; }
+  #root-path { font-size: 11px; color: #6d7178; word-break: break-all; }
+  /* --- AI chat panel (left) --- */
+  #chat-panel { width: 380px; flex-shrink: 0; background: #202228; border-right: 1px solid #34363c; display: flex; flex-direction: column; min-height: 0; }
+  #chat-panel.collapsed { display: none; }
+  #chat-tab { display: none; flex-shrink: 0; width: 28px; background: #24262c; border-right: 1px solid #34363c; cursor: pointer; writing-mode: vertical-rl; transform: rotate(180deg); text-align: center; font-size: 12px; letter-spacing: 0.08em; color: #aeb3bc; padding: 12px 0; user-select: none; }
+  #chat-tab:hover { background: #2c2f36; color: #fff; }
+  #chat-panel.collapsed + #chat-tab { display: block; }
+  #chat-head { display: flex; align-items: center; gap: 6px; padding: 10px 12px; border-bottom: 1px solid #34363c; }
+  #chat-head h2 { font-size: 14px; margin: 0; flex: 1; }
+  #chat-head button { padding: 3px 8px; font-size: 12px; }
+  #chat-select { width: 100%; font-size: 12px; padding: 4px 6px; }
+  #chat-subhead { display: flex; flex-direction: column; gap: 4px; padding: 8px 12px; border-bottom: 1px solid #2c2f36; font-size: 11px; color: #8b8f98; }
+  #chat-messages { flex: 1; overflow-y: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+  .msg { font-size: 13px; line-height: 1.45; word-break: break-word; }
+  .msg.user { align-self: flex-end; max-width: 92%; background: #2f4f8f; border-radius: 10px 10px 2px 10px; padding: 7px 10px; }
+  .msg.user img { display: block; max-width: 100%; border-radius: 6px; margin-bottom: 6px; cursor: zoom-in; }
+  .msg.user .marks { font-size: 10px; color: #c9d6f2; margin-top: 4px; font-family: ui-monospace, Menlo, monospace; white-space: pre-wrap; max-height: 80px; overflow: auto; }
+  .msg.assistant { background: #2a2c33; border: 1px solid #363940; border-radius: 10px 10px 10px 2px; padding: 8px 10px; }
+  .msg.assistant pre { background: #18191d; padding: 6px 8px; border-radius: 6px; overflow-x: auto; font-size: 11px; }
+  .msg.assistant code { font-family: ui-monospace, Menlo, monospace; font-size: 12px; background: #18191d; padding: 0 3px; border-radius: 3px; }
+  .msg.assistant pre code { background: none; padding: 0; }
+  .msg.assistant p { margin: 0 0 6px; } .msg.assistant p:last-child { margin: 0; }
+  .msg.assistant .cost { font-size: 10px; color: #6d7178; margin-top: 4px; }
+  .msg.activity, .msg.progress { font-size: 11px; color: #8b8f98; font-family: ui-monospace, Menlo, monospace; padding-left: 8px; border-left: 2px solid #3a3d45; }
+  .msg.progress { font-family: inherit; font-style: italic; }
+  .msg.error { font-size: 12px; color: #f0a0a0; background: #3a2226; border-radius: 6px; padding: 6px 9px; white-space: pre-wrap; }
+  .msg.working { font-size: 12px; color: #aeb3bc; display: flex; align-items: center; gap: 6px; }
+  .spinner { width: 12px; height: 12px; border: 2px solid #44474e; border-top-color: #7fa8ff; border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #chat-empty { color: #6d7178; font-size: 12px; text-align: center; margin-top: 30px; line-height: 1.6; }
+  #chat-composer { border-top: 1px solid #34363c; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+  #chat-input { width: 100%; resize: vertical; min-height: 72px; max-height: 260px; font-size: 13px; }
+  #chat-composer .opts { display: flex; align-items: center; gap: 10px; font-size: 11px; color: #9aa0aa; }
+  #chat-composer .opts label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+  #chat-composer .opts .spacer { flex: 1; }
+  #chat-send { padding: 6px 16px; }
+  #chat-stop { display: none; background: #6b2c33; border-color: #6b2c33; }
+  /* --- Settings modal --- */
+  #settings-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.55); display: none; align-items: center; justify-content: center; z-index: 10; }
+  #settings-overlay.open { display: flex; }
+  #settings { width: 520px; max-width: calc(100vw - 32px); max-height: calc(100vh - 32px); overflow-y: auto; background: #24262c; border: 1px solid #3a3d45; border-radius: 10px; padding: 18px; display: flex; flex-direction: column; gap: 10px; }
+  #settings h2 { margin: 0 0 4px; font-size: 16px; }
+  #settings fieldset { border: 1px solid #34363c; border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; margin: 0; }
+  #settings legend { font-size: 12px; color: #aeb3bc; padding: 0 4px; }
+  #settings label.field { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: #aeb3bc; }
+  #settings label.check { display: flex; gap: 6px; align-items: center; font-size: 12px; color: #c7cad1; }
+  #settings input[type="text"], #settings input[type="password"], #settings textarea, #settings select { font: inherit; color: inherit; background: #303339; border: 1px solid #44474e; border-radius: 6px; padding: 6px 8px; width: 100%; }
+  #settings .hint { font-size: 11px; color: #6d7178; }
+  #settings .actions { display: flex; gap: 8px; justify-content: flex-end; align-items: center; }
+  #settings .actions #settings-status { flex: 1; font-size: 12px; }
+  #lightbox { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: none; align-items: center; justify-content: center; z-index: 11; cursor: zoom-out; }
+  #lightbox img { max-width: 95vw; max-height: 95vh; }
+  /* --- ⌘K search palette --- */
+  .kbd { font-size: 10px; color: #8b8f98; border: 1px solid #44474e; border-radius: 4px; padding: 0 4px; margin-left: 4px; }
+  #search-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: none; justify-content: center; align-items: flex-start; padding-top: 12vh; z-index: 12; }
+  #search-overlay.open { display: flex; }
+  #search-box { width: 640px; max-width: calc(100vw - 32px); background: #24262c; border: 1px solid #44474e; border-radius: 12px; box-shadow: 0 20px 60px rgba(0,0,0,0.5); display: flex; flex-direction: column; max-height: 70vh; overflow: hidden; }
+  #search-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid #34363c; }
+  #search-input { flex: 1; font: inherit; font-size: 15px; color: inherit; background: transparent; border: none; outline: none; }
+  #search-scope { display: flex; gap: 2px; font-size: 11px; }
+  #search-scope button { padding: 3px 8px; font-size: 11px; border-radius: 5px; background: transparent; border: 1px solid transparent; color: #9aa0aa; }
+  #search-scope button.active { background: #303339; border-color: #44474e; color: #e6e6e6; }
+  #search-results { overflow-y: auto; padding: 4px 0; }
+  .sr-item { display: flex; align-items: center; gap: 10px; padding: 7px 14px; cursor: pointer; font-size: 13px; }
+  .sr-item.active { background: #2f4f8f; }
+  .sr-icon { width: 16px; text-align: center; flex-shrink: 0; }
+  .sr-main { flex: 1; min-width: 0; }
+  .sr-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sr-path { font-size: 11px; color: #8b8f98; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sr-item.active .sr-path { color: #c9d6f2; }
+  .sr-item mark { background: none; color: #ffd36b; font-weight: 600; }
+  .sr-count { font-size: 11px; color: #8b8f98; flex-shrink: 0; }
+  .sr-current { font-size: 10px; color: #7fd6a0; flex-shrink: 0; }
+  #search-foot { border-top: 1px solid #34363c; padding: 6px 12px; font-size: 11px; color: #6d7178; display: flex; gap: 14px; }
+  #search-empty { padding: 18px; text-align: center; color: #6d7178; font-size: 13px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="chat-panel">
+    <div id="chat-head">
+      <h2>AI chat</h2>
+      <button id="chat-new" title="New conversation">+ New</button>
+      <button id="chat-delete" title="Delete this conversation">&#128465;</button>
+      <button id="chat-settings-btn" title="AI connection settings">&#9881;</button>
+      <button id="chat-collapse" title="Hide chat">&laquo;</button>
+    </div>
+    <div id="chat-subhead">
+      <select id="chat-select" title="Conversations for this model"></select>
+      <span id="chat-backend-label"></span>
+    </div>
+    <div id="chat-messages"><div id="chat-empty">Describe a change, optionally with marks on the model.<br/>Each message sends a screenshot, all marks, and the model path.<br/>The model reloads automatically when the AI finishes.</div></div>
+    <div id="chat-composer">
+      <textarea id="chat-input" placeholder="e.g. Make face 1 3 mm thicker  (⌘/Ctrl+Enter to send)"></textarea>
+      <div class="opts">
+        <label title="Attach a screenshot of the current view with marks legend"><input type="checkbox" id="chat-attach" checked /> Screenshot + marks</label>
+        <span class="spacer"></span>
+        <button id="chat-stop">Stop</button>
+        <button id="chat-send" class="primary">Send</button>
+      </div>
+    </div>
+  </div>
+  <div id="chat-tab" title="Show AI chat">AI CHAT</div>
+  <div id="viewport">
+    <div id="toolbar">
+      <div class="tb-group">
+        <label class="tb-label" for="view-mode">View</label>
+        <select id="view-mode" title="Render style (V cycles)">
+          <option value="solid">Solid</option>
+          <option value="xray">X-ray</option>
+          <option value="edges">Edges only</option>
+        </select>
+      </div>
+      <div class="tb-group" id="edge-angle-group" hidden>
+        <label class="tb-label" for="edge-angle" title="Only draw creases sharper than this angle">Edge angle</label>
+        <input type="number" id="edge-angle" value="20" min="1" max="89" step="1" />
+        <span class="tb-label">&deg;</span>
+      </div>
+      <div class="tb-sep"></div>
+      <button id="axes-toggle" class="tb-icon active" title="Show/hide axes" aria-pressed="true">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke-width="1.8" stroke-linecap="round">
+          <path d="M6 12 L16 12" stroke="#ff5555" />
+          <path d="M6 12 L6 2" stroke="#55ff55" />
+          <path d="M6 12 L1.5 16.5" stroke="#5599ff" />
+        </svg>
+      </button>
+      <div class="tb-sep"></div>
+      <button id="slicer-toggle" class="tb-btn" title="Cut a slab of the model into a new STL (S)" aria-pressed="false">&#9986; Slicer</button>
+    </div>
+    <div id="slicer-panel" hidden>
+      <div class="sp-head"><span>Slicer</span><button id="slicer-close" title="Close (Esc)">&times;</button></div>
+      <div class="sp-row">
+        <label>Plane</label>
+        <div id="slice-planes">
+          <button data-axis="z" title="Horizontal cut, slab along Z">XY</button>
+          <button data-axis="y" title="Slab along Y">XZ</button>
+          <button data-axis="x" title="Slab along X">YZ</button>
+        </div>
+      </div>
+      <div class="sp-row">
+        <label for="slice-thickness">Thickness</label>
+        <input type="number" id="slice-thickness" value="2" min="0.1" step="0.1" /> <span>mm</span>
+      </div>
+      <div class="sp-row">
+        <label for="slice-pos" id="slice-pos-label">Z</label>
+        <input type="number" id="slice-pos" step="0.1" /> <span>mm</span>
+      </div>
+      <button id="slice-save" class="primary">Save slice as STL</button>
+      <div id="slice-result" hidden><span></span><button title="Open the slice (same camera)">Open</button></div>
+      <div class="sp-note">Move the mouse to slide the plane; over the model it snaps to the point under the cursor. Click to save the slab (centered on the plane) next to the model. Arrow keys nudge 0.1 mm (Shift: 1 mm).</div>
+    </div>
+    <div id="canvas-host"></div>
+    <div id="axis-legend"><b style="color:#ff5555">X</b> red &nbsp;<b style="color:#55ff55">Y</b> green &nbsp;<b style="color:#5599ff">Z</b> blue <span style="color:#8a8f98">(mm, model coords)</span></div>
+    <div id="hint">Click the model to drop a pin. Drag to orbit, scroll to zoom.</div>
+    <div id="notes-panel"></div>
+  </div>
+  <div id="sidebar">
+    <h1>3D Mark Tool</h1>
+    <div id="root-path"></div>
+    <div>
+      <small class="label">Project</small>
+      <select id="project-select"></select>
+    </div>
+    <div>
+      <small class="label">Model</small>
+      <div id="model-list" role="listbox" tabindex="0" aria-label="Models"></div>
+    </div>
+    <div class="row">
+      <button id="reload-btn">&#8635; Reload projects &amp; model</button>
+    </div>
+    <div class="row">
+      <button id="search-open-btn" title="Search folders and files">&#128269; Search folders &amp; files <span class="kbd">⌘K</span></button>
+    </div>
+    <hr />
+    <small class="label">Mark type</small>
+    <div id="mode-row">
+      <label><input type="radio" name="mode" value="pin" checked /> Pin</label>
+      <label><input type="radio" name="mode" value="face" /> Face</label>
+      <label><input type="radio" name="mode" value="arrow" /> Arrow</label>
+    </div>
+    <div id="face-tolerance-row">
+      <small class="label" style="margin:0;">Coplanar tolerance</small>
+      <input type="number" id="face-tolerance" value="3" min="0.1" max="45" step="0.5" />
+      <span>&deg;</span>
+    </div>
+    <hr />
+    <div class="row">
+      <button id="copy-snapshot-btn" class="primary">Copy snapshot to clipboard</button>
+    </div>
+    <div class="row">
+      <button id="download-snapshot-btn">Download snapshot</button>
+      <button id="copy-notes-btn">Copy notes as text</button>
+    </div>
+    <div class="row">
+      <button id="clear-pins-btn">Clear all marks</button>
+    </div>
+    <div id="status"></div>
+    <hr />
+    <small class="label">Marks</small>
+    <div id="empty">No marks yet — click on the model.</div>
+    <div id="pins"></div>
+  </div>
+</div>
+<div id="settings-overlay">
+  <div id="settings">
+    <h2>AI connection</h2>
+    <label class="field">Backend
+      <select id="set-backend">
+        <option value="claude_code">Claude Code CLI (uses your Claude login; full tools + MCP)</option>
+        <option value="anthropic">Anthropic API (API key; built-in file + OpenSCAD tools)</option>
+      </select>
+    </label>
+    <fieldset data-backend="claude_code">
+      <legend>Claude Code</legend>
+      <label class="field">claude executable<input type="text" id="set-cc_path" placeholder="claude" /></label>
+      <label class="field">Model <span class="hint">(empty = Claude Code default; e.g. opus, sonnet, claude-opus-5-5)</span><input type="text" id="set-cc_model" /></label>
+      <label class="field">Permission mode
+        <select id="set-cc_permission_mode">
+          <option value="acceptEdits">acceptEdits — file edits allowed, other tools per allow-list</option>
+          <option value="bypassPermissions">bypassPermissions — everything allowed</option>
+          <option value="default">default — only allow-listed tools</option>
+        </select>
+      </label>
+      <label class="field">OAuth token <span class="hint">(optional, from <code>claude setup-token</code>; empty = sk-ant-oat token in env, else your claude login)</span><input type="password" id="set-cc_oauth_token" autocomplete="off" /></label>
+      <label class="check"><input type="checkbox" id="set-cc_inherit_api_key" /> Pass ANTHROPIC_API_KEY from the environment (off = use your <code>claude</code> login)</label>
+      <label class="field">Allowed tools <span class="hint">(space-separated, passed to --allowedTools)</span><input type="text" id="set-cc_allowed_tools" /></label>
+    </fieldset>
+    <fieldset data-backend="anthropic">
+      <legend>Anthropic API</legend>
+      <label class="field">API key <span class="hint">(stored locally in mark-tool.db; empty = ANTHROPIC_API_KEY / ant auth profile)</span><input type="password" id="set-api_key" autocomplete="off" /></label>
+      <label class="field">Model<input type="text" id="set-api_model" placeholder="claude-opus-5-5" /></label>
+      <div class="row">
+        <label class="field">Effort
+          <select id="set-api_effort"><option>low</option><option>medium</option><option>high</option><option>xhigh</option><option>max</option></select>
+        </label>
+        <label class="field">Max tokens<input type="text" id="set-api_max_tokens" /></label>
+      </div>
+      <label class="check"><input type="checkbox" id="set-api_fallbacks" /> Server-side refusal fallback (supported models only)</label>
+      <label class="field">OpenSCAD path <span class="hint">(empty = autodetect)</span><input type="text" id="set-openscad_path" /></label>
+    </fieldset>
+    <fieldset>
+      <legend>Behavior</legend>
+      <label class="check"><input type="checkbox" id="set-auto_reload" /> Reload the model automatically when the AI finishes</label>
+      <label class="check"><input type="checkbox" id="set-clear_marks_on_success" /> Clear marks after a successful edit</label>
+      <label class="field">Extra instructions for the AI<textarea id="set-system_extra" rows="3" placeholder="e.g. Always keep wall thickness ≥ 1.6 mm. Print on a Bambu P1S."></textarea></label>
+    </fieldset>
+    <div class="actions">
+      <span id="settings-status"></span>
+      <button id="settings-test">Test connection</button>
+      <button id="settings-cancel">Cancel</button>
+      <button id="settings-save" class="primary">Save</button>
+    </div>
+  </div>
+</div>
+<div id="search-overlay">
+  <div id="search-box" role="dialog" aria-label="Search folders and files">
+    <div id="search-head">
+      <span>&#128269;</span>
+      <input id="search-input" type="text" placeholder="Search folders and .stl files…" autocomplete="off" spellcheck="false" />
+      <div id="search-scope">
+        <button data-scope="all" class="active">All</button>
+        <button data-scope="folder">Folders</button>
+        <button data-scope="file">Files</button>
+      </div>
+    </div>
+    <div id="search-results"></div>
+    <div id="search-foot"><span>↑↓ navigate</span><span>↵ open</span><span>Tab switch scope</span><span>Esc close</span></div>
+  </div>
+</div>
+<div id="lightbox"><img alt="" /></div>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="app.js?v=13"></script>
+<script type="module" src="chat.js?v=5"></script>
+<script type="module" src="search.js?v=2"></script>
+</body>
+</html>

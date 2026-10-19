@@ -1,0 +1,199 @@
+#!/usr/bin/env python3
+"""CLI for the 3D mark tool — start/stop/configure the local STL viewer server.
+
+Usage:
+  mark-tool                        Start (or reuse) the server and open it in the browser.
+  mark-tool --set-root PATH        Set the project library root and (re)start.
+  mark-tool --status               Show whether the server is running.
+  mark-tool --stop                 Stop the server.
+  mark-tool --no-open              Start/reuse without opening a browser tab.
+"""
+import argparse
+import json
+import os
+import signal
+import socket
+import subprocess
+import sys
+import time
+import webbrowser
+from pathlib import Path
+
+APP_DIR = Path(__file__).resolve().parent
+CONFIG_FILE = APP_DIR / "config.json"
+STATE_FILE = APP_DIR / ".state.json"
+LOG_FILE = APP_DIR / "server.log"
+DEFAULT_PORT = 8743
+LAUNCHD_LABEL = "local.mark-tool"
+LAUNCHD_PLIST = Path.home() / "Library" / "LaunchAgents" / f"{LAUNCHD_LABEL}.plist"
+
+
+def load_config():
+    if CONFIG_FILE.exists():
+        try:
+            return json.loads(CONFIG_FILE.read_text())
+        except Exception:
+            return {}
+    return {}
+
+
+def save_config(cfg):
+    CONFIG_FILE.write_text(json.dumps(cfg, indent=2))
+
+
+def load_state():
+    if STATE_FILE.exists():
+        try:
+            return json.loads(STATE_FILE.read_text())
+        except Exception:
+            return None
+    return None
+
+
+def save_state(state):
+    STATE_FILE.write_text(json.dumps(state, indent=2))
+
+
+def pid_alive(pid):
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def port_open(port):
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(0.3)
+        return s.connect_ex(("127.0.0.1", port)) == 0
+
+
+def launchctl(*args):
+    return subprocess.run(["/bin/launchctl", *args], capture_output=True, text=True)
+
+
+def launchd_target():
+    return f"gui/{os.getuid()}/{LAUNCHD_LABEL}"
+
+
+def stop_server(quiet=False):
+    # Under launchd (KeepAlive) a kill is undone at once; launchd owns stop/start.
+    if LAUNCHD_PLIST.exists():
+        if quiet:
+            launchctl("kickstart", "-k", launchd_target())
+        else:
+            print(f"Managed by launchd: use `launchctl bootout {launchd_target()}` to stop it.")
+        return
+    state = load_state()
+    if not state or not pid_alive(state.get("pid", -1)):
+        if not quiet:
+            print("Not running.")
+        if STATE_FILE.exists():
+            STATE_FILE.unlink()
+        return
+    os.kill(state["pid"], signal.SIGTERM)
+    for _ in range(20):
+        if not pid_alive(state["pid"]):
+            break
+        time.sleep(0.1)
+    if STATE_FILE.exists():
+        STATE_FILE.unlink()
+    if not quiet:
+        print(f"Stopped (pid {state['pid']}).")
+
+
+def server_python():
+    # The AI chat panel's Anthropic backend needs the SDK, installed in a
+    # private venv next to the app; fall back to this interpreter without it.
+    venv = APP_DIR / ".venv" / "bin" / "python"
+    return venv if venv.exists() else Path(sys.executable)
+
+
+def start_server(port):
+    if LAUNCHD_PLIST.exists():
+        if launchctl("print", launchd_target()).returncode != 0:
+            launchctl("bootstrap", f"gui/{os.getuid()}", str(LAUNCHD_PLIST))
+        else:
+            launchctl("kickstart", launchd_target())
+        for _ in range(50):
+            if port_open(port):
+                break
+            time.sleep(0.1)
+        return
+    log = open(LOG_FILE, "a")
+    proc = subprocess.Popen(
+        [str(server_python()), str(APP_DIR / "server.py")],
+        cwd=str(APP_DIR),
+        env={**os.environ, "MARK_TOOL_PORT": str(port)},
+        stdout=log,
+        stderr=log,
+        start_new_session=True,
+    )
+    for _ in range(50):
+        if port_open(port):
+            break
+        time.sleep(0.1)
+    save_state({"pid": proc.pid, "port": port})
+
+
+def main():
+    parser = argparse.ArgumentParser(description="3D mark tool — local STL viewer with click-to-pin annotations.")
+    parser.add_argument("--set-root", metavar="PATH", help="Set the project library root and (re)start there.")
+    parser.add_argument("--stop", action="store_true", help="Stop the running server.")
+    parser.add_argument("--status", action="store_true", help="Show whether the server is running.")
+    parser.add_argument("--no-open", action="store_true", help="Don't open the browser.")
+    parser.add_argument("--port", type=int, default=DEFAULT_PORT)
+    args = parser.parse_args()
+
+    if args.stop:
+        stop_server()
+        return
+
+    if args.set_root:
+        root = str(Path(args.set_root).expanduser().resolve())
+        if not Path(root).is_dir():
+            print(f"Not a directory: {root}", file=sys.stderr)
+            sys.exit(1)
+        cfg = load_config()
+        cfg["root"] = root
+        save_config(cfg)
+        print(f"Library root set to: {root}")
+        stop_server(quiet=True)
+
+    state = load_state()
+    running = bool(state) and pid_alive(state.get("pid", -1)) and port_open(state.get("port", args.port))
+    if not running and port_open(args.port):
+        running, state = True, {"port": args.port}
+
+    if args.status:
+        cfg = load_config()
+        root = cfg.get("root", "(unset — defaults to the directory the server was last started from)")
+        if running:
+            print(f"Running at http://127.0.0.1:{state['port']}/")
+        else:
+            print("Not running.")
+        print(f"Library root: {root}")
+        return
+
+    if not running:
+        cfg = load_config()
+        if "root" not in cfg:
+            cfg["root"] = str(Path.cwd().resolve())
+            save_config(cfg)
+            print(f"No library root configured yet — defaulting to current directory: {cfg['root']}")
+            print("Change it any time with: mark-tool --set-root /path/to/your/models")
+        start_server(args.port)
+
+    state = load_state() or ({"port": args.port} if port_open(args.port) else None)
+    if not state:
+        print(f"Failed to start the server — check {LOG_FILE}", file=sys.stderr)
+        sys.exit(1)
+
+    url = f"http://127.0.0.1:{state['port']}/"
+    print(url)
+    if not args.no_open:
+        webbrowser.open(url)
+
+
+if __name__ == "__main__":
+    main()
