@@ -1,4 +1,5 @@
 # Mark Tool
+<img width="1734" height="1115" alt="image" src="https://github.com/user-attachments/assets/a2196bb1-c659-4303-980a-07d80f967c80" />
 
 A local, browser-based STL viewer for marking up 3D models and feeding the result back to an AI.
 
