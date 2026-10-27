@@ -4,6 +4,11 @@ Running list of features: done, next, and ideas. Newest decisions at the top of 
 
 ## Done
 
+### Folder tree + new projects (2026-10-27)
+- Sidebar **Folders** tree replaces the Project dropdown (`GET /api/tree`). Root node = the library folder; every non-hidden folder is shown, including empty ones; `.stl` count on the right. Expanded state remembered per browser; arrow keys navigate.
+- Right-click a folder → **New sub-folder…** → inline name box (`POST /api/folder/new`), then the new folder is selected.
+- A folder without `.stl` files shows a **No model** screen. The chat targets the folder itself (model `""`, Claude runs with the folder as cwd), sends no screenshot, and is prompted to create `<part>.scad` + `<part>.stl`. When a new STL appears, the server moves that chat onto it and the viewer opens it.
+
 ### Viewport toolbar + View dropdown (2026-10-19)
 - Toolbar strip across the top of the 3D viewport (`#toolbar` in `index.html`). Future viewport tools go here.
 - **View** dropdown: Solid / X-ray / Edges only. `V` cycles modes. Choice is remembered per browser.

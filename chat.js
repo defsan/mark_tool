@@ -15,7 +15,7 @@ const chatSelect = $("chat-select");
 const backendLabel = $("chat-backend-label");
 
 let settings = null;
-let target = null;     // { project, model } shown in the viewer
+let target = null;     // { project, model } shown in the viewer; model "" = empty folder
 let chatId = null;
 let job = null;        // { id, since, timer, workingEl, progressEl }
 
@@ -106,6 +106,23 @@ try { if (localStorage.getItem("marktool.chatCollapsed") === "1") setCollapsed(t
 
 // --- Conversations ---------------------------------------------------------
 
+const EMPTY_HINTS = {
+  model: { text: emptyEl.innerHTML, placeholder: input.placeholder },
+  folder: {
+    text: "This folder has no model yet.<br/>Describe the part you want, with sizes if you have them.<br/>The AI writes an OpenSCAD source and exports the STL here,<br/>then the viewer opens it.",
+    placeholder: "e.g. A wall hook for a 20 mm rail, 60 mm long, 4 mm thick  (⌘/Ctrl+Enter to send)",
+  },
+};
+
+// No model open = no screenshot or marks to send, and a "describe a new
+// model" prompt instead of an edit prompt.
+function applyTargetKind() {
+  const hint = target && !target.model ? EMPTY_HINTS.folder : EMPTY_HINTS.model;
+  emptyEl.innerHTML = hint.text;
+  input.placeholder = hint.placeholder;
+  attachBox.disabled = !!target && !target.model;
+}
+
 function clearMessages() {
   for (const el of [...msgsEl.querySelectorAll(".msg")]) el.remove();
   emptyEl.style.display = "block";
@@ -162,10 +179,12 @@ function onModelChange(detail) {
   if (target && target.project === detail.project && target.model === detail.model) return;
   target = detail;
   if (!job) {
+    applyTargetKind();
     loadChatList().catch((err) => addMessageEl("error", `Couldn't load conversations: ${err.message}`));
   }
 }
 window.addEventListener("marktool:model", (e) => onModelChange(e.detail));
+window.addEventListener("marktool:focus-chat", () => { setCollapsed(false); input.focus(); });
 
 // --- Sending ----------------------------------------------------------------
 
@@ -181,14 +200,15 @@ async function send() {
   if (job) return;
   if (!target && mt) onModelChange(mt.current());
   if (!mt || !target) {
-    addMessageEl("error", "No model selected — pick a project and model on the right first.");
+    addMessageEl("error", "No folder selected — pick a folder on the right first.");
     return;
   }
   const text = input.value.trim();
-  const hasMarks = mt.markCount() > 0;
+  const hasModel = !!target.model;
+  const hasMarks = hasModel && mt.markCount() > 0;
   if (!text && !hasMarks) { input.focus(); return; }
 
-  const attach = attachBox.checked;
+  const attach = attachBox.checked && hasModel;
   const image = attach ? mt.snapshotDataUrl() : null;
   const marksText = attach && hasMarks ? mt.notesAsText() : "";
   addMessageEl("user", text, { image, marks: marksText });
@@ -265,7 +285,19 @@ async function finishJob(snap) {
     // The user switched models mid-run; show that model's conversations now.
     await loadChatList();
   }
-  if (settings && settings.auto_reload === "1" && same && (changed.includes(target.model) || added.length)) {
+  if (!done.forTarget.model) {
+    // Folder-level chat. If it produced a model, the server moved this
+    // conversation onto it; open that model and keep the conversation.
+    if (same && result.model) {
+      target = { project: done.forTarget.project, model: result.model };
+      applyTargetKind();
+      await mt.selectModel(target.project, target.model);
+      await loadChatList(chatId, false);
+      mt.setStatus(`New model ${result.model} created.`);
+    } else if (same && snap.status === "done") {
+      mt.setStatus("AI finished — no model was created yet.", false);
+    }
+  } else if (settings && settings.auto_reload === "1" && same && (changed.includes(target.model) || added.length)) {
     await mt.reload();
     mt.setStatus(changed.includes(target.model) ? "Model updated by AI — reloaded." : "New models added — list refreshed.");
   } else if (snap.status === "done" && same && !changed.includes(target.model)) {

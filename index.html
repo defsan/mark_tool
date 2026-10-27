@@ -101,6 +101,32 @@
   #model-list .model-time { flex-shrink: 0; font-size: 11px; color: #8b8f98; }
   #model-list .model-item.selected .model-time { color: #dfe4ff; }
   #model-list .model-empty { padding: 5px 7px; color: #8b8f98; }
+  #project-tree { max-height: 280px; overflow-y: auto; background: #303339; border: 1px solid #44474e; border-radius: 6px; padding: 3px; outline: none; user-select: none; }
+  #project-tree:focus-visible { border-color: #6b8afd; }
+  #project-tree .tree-row { display: flex; align-items: center; gap: 4px; padding: 4px 7px 4px 0; border-radius: 4px; cursor: pointer; }
+  #project-tree .tree-row:hover { background: #3a3d44; }
+  #project-tree .tree-row.selected { background: #3d5afe; color: #fff; }
+  #project-tree .tree-row.menu-target { outline: 1px solid #6b8afd; }
+  #project-tree .tree-caret { width: 14px; flex-shrink: 0; text-align: center; font-size: 9px; color: #8b8f98; transition: transform 0.1s; }
+  #project-tree .tree-caret.leaf { visibility: hidden; }
+  #project-tree .tree-node.expanded > .tree-row .tree-caret { transform: rotate(90deg); }
+  #project-tree .tree-node:not(.expanded) > .tree-children { display: none; }
+  #project-tree .tree-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #project-tree .tree-root > .tree-row .tree-label { font-weight: 600; }
+  #project-tree .tree-count { flex-shrink: 0; font-size: 11px; color: #8b8f98; }
+  #project-tree .tree-row.selected .tree-caret, #project-tree .tree-row.selected .tree-count { color: #dfe4ff; }
+  #project-tree .tree-new { display: flex; align-items: center; gap: 4px; padding: 2px 7px 2px 0; }
+  #project-tree .tree-new input { flex: 1; min-width: 0; font: inherit; font-size: 12px; color: inherit; background: #24262c; border: 1px solid #6b8afd; border-radius: 4px; padding: 3px 6px; outline: none; }
+  #tree-menu { position: fixed; z-index: 20; min-width: 170px; background: #2c2f36; border: 1px solid #44474e; border-radius: 8px; padding: 4px; box-shadow: 0 8px 24px rgba(0,0,0,0.45); font-size: 13px; }
+  #tree-menu[hidden] { display: none; }
+  #tree-menu button { display: block; width: 100%; text-align: left; background: transparent; border: none; border-radius: 5px; padding: 6px 10px; }
+  #tree-menu button:hover { background: #3d5afe; }
+  #no-model { position: absolute; inset: 38px 0 0 0; z-index: 1; background: #1b1d22; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; text-align: center; padding: 24px; }
+  #no-model[hidden] { display: none; }
+  #no-model .nm-icon { font-size: 44px; opacity: 0.35; }
+  #no-model h2 { margin: 0; font-size: 18px; font-weight: 600; }
+  #no-model .nm-folder { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: #8ea2ff; word-break: break-all; }
+  #no-model p { margin: 0; max-width: 420px; font-size: 13px; line-height: 1.5; color: #8b8f98; }
   #root-path { font-size: 11px; color: #6d7178; word-break: break-all; }
   #root-row { display: flex; align-items: baseline; gap: 6px; }
   #root-row #root-path { flex: 1; min-width: 0; }
@@ -263,6 +289,13 @@
     <div id="axis-legend"><b style="color:#ff5555">X</b> red &nbsp;<b style="color:#55ff55">Y</b> green &nbsp;<b style="color:#5599ff">Z</b> blue <span style="color:#8a8f98">(mm, model coords)</span></div>
     <div id="hint">Click the model to drop a pin. Drag to orbit, scroll to zoom.</div>
     <div id="notes-panel"></div>
+    <div id="no-model" hidden>
+      <div class="nm-icon">&#9634;</div>
+      <h2>No model</h2>
+      <div class="nm-folder"></div>
+      <p>This folder has no .stl files yet. Describe the part you want in the AI chat and it will create the source and model here.</p>
+      <button id="no-model-chat" class="primary">Describe a new model</button>
+    </div>
   </div>
   <div id="sidebar">
     <h1>3D Mark Tool</h1>
@@ -279,8 +312,8 @@
       </div>
     </div>
     <div>
-      <small class="label">Project</small>
-      <select id="project-select"></select>
+      <small class="label">Folders <span style="opacity:0.7">(right-click for a new sub-folder)</span></small>
+      <div id="project-tree" role="tree" tabindex="0" aria-label="Project folders"></div>
     </div>
     <div>
       <small class="label">Model</small>
@@ -388,6 +421,9 @@
     <div id="search-foot"><span>↑↓ navigate</span><span>↵ open</span><span>Tab switch scope</span><span>Esc close</span></div>
   </div>
 </div>
+<div id="tree-menu" role="menu" hidden>
+  <button data-action="new-folder" role="menuitem">New sub-folder…</button>
+</div>
 <div id="lightbox"><img alt="" /></div>
 <script type="importmap">
 {
@@ -397,8 +433,8 @@
   }
 }
 </script>
-<script type="module" src="app.js?v=13"></script>
-<script type="module" src="chat.js?v=5"></script>
+<script type="module" src="app.js?v=16"></script>
+<script type="module" src="chat.js?v=6"></script>
 <script type="module" src="search.js?v=2"></script>
 </body>
 </html>

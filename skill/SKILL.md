@@ -8,7 +8,7 @@ description: Launch the 3D Mark Tool — a local browser-based STL viewer where 
 A standalone local web app (installed wherever you cloned this repo, launched via the
 `mark-tool` CLI on PATH) for visually annotating STL files. It is project-agnostic: it
 serves a configured **library root** directory containing multiple project folders, and
-lets the user pick a project, then a model within it, from dropdowns in the browser.
+lets the user pick a project folder from a folder tree, then a model within it. Right-clicking a folder creates a sub-folder; an empty folder shows "No model" and its AI chat generates a new model there.
 
 ## Launching it
 
@@ -67,7 +67,7 @@ the same model.
 ## Workflow
 
 1. Launch it (`mark-tool`) and tell the user which project/model is selected, or ask
-   them to pick the right one from the dropdowns if there are several candidates.
+   them to pick the right one in the folder tree and model list if there are several candidates.
 2. After you edit a `.scad`/CAD source and re-export the `.stl`, tell the user to click
    **"Reload projects & model"** in the tool to refresh the geometry in place — it keeps
    their camera angle and existing marks so they can compare before/after (face

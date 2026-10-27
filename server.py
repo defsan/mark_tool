@@ -113,6 +113,43 @@ def list_index():
     return out
 
 
+def folder_tree():
+    """Every (non-hidden) folder under the library root as a nested tree, for
+    the sidebar. Empty folders are included so new projects can be started."""
+    if not ROOT.is_dir():
+        return None
+
+    def node(d):
+        try:
+            subdirs = sorted((c for c in d.iterdir() if c.is_dir() and not c.name.startswith(".")),
+                             key=lambda c: c.name.lower())
+        except OSError:
+            subdirs = []
+        return {
+            "name": "." if d == ROOT else str(d.relative_to(ROOT)),
+            "label": d.name or str(d),
+            "count": len(list(d.glob("*.stl"))),
+            "children": [node(c) for c in subdirs],
+        }
+
+    return node(ROOT)
+
+
+def create_folder(parent, name):
+    """Make a new sub-folder of a library folder; returns its project name."""
+    base = resolve_project_dir(parent)
+    if base is None:
+        raise ValueError("Parent folder not found")
+    name = (name or "").strip()
+    if not name or name in (".", "..") or name.startswith(".") or "/" in name or "\\" in name:
+        raise ValueError(f"Invalid folder name: {name!r}")
+    folder = base / name
+    if folder.exists():
+        raise ValueError(f"{name} already exists")
+    folder.mkdir()
+    return str(folder.relative_to(ROOT))
+
+
 def resolve_project_dir(name):
     if name == ".":
         return ROOT
@@ -274,6 +311,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if parsed.path == "/api/projects":
             self.send_json(list_projects())
             return
+        if parsed.path == "/api/tree":
+            self.send_json({"root": str(ROOT), "tree": folder_tree()})
+            return
         if parsed.path == "/api/index":
             self.send_json(list_index())
             return
@@ -354,6 +394,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     return
                 self.send_json({"ok": True, "root": str(root)})
                 return
+            if parsed.path == "/api/folder/new":
+                try:
+                    name = create_folder(body.get("parent", "."), body.get("name"))
+                except ValueError as e:
+                    self.send_json({"ok": False, "error": str(e)}, status=400)
+                    return
+                self.send_json({"ok": True, "name": name})
+                return
             if parsed.path == "/api/root/browse":
                 self.send_json({"ok": True, "path": browse_folder()})
                 return
@@ -361,7 +409,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 self.send_json({"ok": True, "message": ai.test_connection()})
                 return
             if parsed.path == "/api/chat/new":
-                self.send_json({"id": ai.create_chat(body["project"], body["model"])})
+                self.send_json({"id": ai.create_chat(body["project"], body.get("model", ""))})
                 return
             if parsed.path == "/api/chat/delete":
                 ai.delete_chat(int(body["id"]))
@@ -369,9 +417,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 return
             if parsed.path == "/api/chat/send":
                 project_dir = resolve_project_dir(body.get("project"))
-                if project_dir is None or not body.get("model"):
-                    self.send_error(400, "Unknown project/model")
+                if project_dir is None:
+                    self.send_error(400, "Unknown project")
                     return
+                # No model = a folder-level chat, e.g. generating a new model in an empty folder.
+                body["model"] = body.get("model") or ""
                 job, chat_id = ai.start_job(ROOT, project_dir, body)
                 self.send_json({"job_id": job.id, "chat_id": chat_id})
                 return

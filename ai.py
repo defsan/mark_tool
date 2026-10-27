@@ -76,6 +76,12 @@ How to work:
   file automatically when you finish, so the export is what the user sees.
 - If the model has no .scad source, say so and propose how to proceed instead
   of guessing.
+- New models: when no model is open (the user picked an empty project folder),
+  build the part from the request. Write a new .scad source in the project
+  folder, named after the part (short, kebab-case), and export a same-named
+  .stl next to it. The viewer opens the new STL when you finish. Pick sensible
+  dimensions for anything unspecified and state them; ask only if the request
+  is too vague to model at all.
 - Finish with a short summary of what you changed (variables/modules and new
   values). Keep it brief — the user sees the result in 3D.
 """
@@ -246,7 +252,10 @@ def stl_mtimes(project_dir: Path):
 def build_prompt(text, ctx, image_path):
     """The per-turn context block sent with every user message."""
     lines = ["## Viewer context"]
-    lines.append(f"- Model shown in viewer: {ctx['stl_path']}")
+    if ctx["stl_path"]:
+        lines.append(f"- Model shown in viewer: {ctx['stl_path']}")
+    else:
+        lines.append("- No model open: this project folder has no .stl yet. Create a new model for the request.")
     lines.append(f"- Project folder: {ctx['project_dir']}")
     if ctx["scad_files"]:
         lines.append("- OpenSCAD sources in project folder: " + ", ".join(ctx["scad_files"]))
@@ -300,7 +309,11 @@ JOBS = {}
 
 
 def start_job(root: Path, project_dir: Path, payload):
-    """payload: {chat_id?, project, model, text, image_b64?, marks_text, camera}"""
+    """payload: {chat_id?, project, model, text, image_b64?, marks_text, camera}
+
+    An empty model is a folder-level chat (new model generation). If such a
+    job creates .stl files, the chat moves to the newest one so the
+    conversation continues once the viewer opens it."""
     settings = get_settings()
     project, model = payload["project"], payload["model"]
     chat_id = payload.get("chat_id")
@@ -320,15 +333,14 @@ def start_job(root: Path, project_dir: Path, payload):
         image_name = f"{chat_id}-{int(time.time() * 1000)}.png"
         (IMAGES_DIR / image_name).write_bytes(base64.b64decode(data))
 
-    stl_path = project_dir / model
     scad_files = sorted(p.name for p in project_dir.glob("*.scad"))
-    same_stem = project_dir / (Path(model).stem + ".scad")
+    same_stem = project_dir / (Path(model).stem + ".scad") if model else None
     ctx = {
-        "stl_path": str(stl_path),
+        "stl_path": str(project_dir / model) if model else None,
         "project_dir": str(project_dir),
         "scad_files": scad_files,
-        "likely_source": str(same_stem) if same_stem.exists() else (
-            str(project_dir / scad_files[0]) if len(scad_files) == 1 else None),
+        "likely_source": str(same_stem) if same_stem and same_stem.exists() else (
+            str(project_dir / scad_files[0]) if model and len(scad_files) == 1 else None),
         "marks_text": payload.get("marks_text"),
         "camera": payload.get("camera"),
     }
@@ -359,7 +371,11 @@ def start_job(root: Path, project_dir: Path, payload):
             after = stl_mtimes(project_dir)
             changed = sorted(n for n, t in after.items() if before.get(n) != t)
             added = sorted(n for n in after if n not in before)
-            job.result = {"changed": changed, "added": added, "chat_id": chat_id}
+            new_model = None
+            if not model and added:
+                new_model = max(added, key=lambda n: after[n])
+                update_chat(chat_id, model=new_model)
+            job.result = {"changed": changed, "added": added, "chat_id": chat_id, "model": new_model or model}
             if changed:
                 job.emit("activity", "Updated: " + ", ".join(changed), changed=changed)
 

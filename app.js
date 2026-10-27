@@ -6,8 +6,227 @@ const PIN_COLORS = ["#e6553f", "#f2b544", "#5fc27e", "#4aa8e0", "#b57de0", "#e06
 
 const host = document.getElementById("canvas-host");
 const rootPathEl = document.getElementById("root-path");
-const projectSelect = document.getElementById("project-select");
+const projectTree = document.getElementById("project-tree");
+const treeMenu = document.getElementById("tree-menu");
+const noModelEl = document.getElementById("no-model");
 const modelList = document.getElementById("model-list");
+
+// Folder tree with a <select>-like interface (value, onchange), like the
+// model list below. Each row's data-name is the project name the server
+// expects: "." for the library root, else the path relative to it.
+const treeRows = () => [...projectTree.querySelectorAll(".tree-row")];
+const projectSelect = {
+  _value: "",
+  onchange: null,
+  get value() { return this._value; },
+  set value(name) {
+    const rows = treeRows();
+    if (!rows.some((el) => el.dataset.name === name)) return;
+    this._value = name;
+    revealFolder(name);
+    for (const el of rows) {
+      const on = el.dataset.name === name;
+      el.classList.toggle("selected", on);
+      el.setAttribute("aria-selected", on);
+      if (on) el.scrollIntoView({ block: "nearest" });
+    }
+  },
+  async pick(name) {
+    if (name === this._value) return;
+    this.value = name;
+    if (this.onchange) await this.onchange();
+  },
+};
+
+let expandedFolders = new Set(["."]);
+try {
+  const saved = JSON.parse(localStorage.getItem("marktool:expandedFolders"));
+  if (Array.isArray(saved)) expandedFolders = new Set([".", ...saved]);
+} catch {}
+
+function treeNodeEl(name) {
+  return projectTree.querySelector(`.tree-node[data-name="${CSS.escape(name)}"]`);
+}
+
+function setFolderExpanded(name, on) {
+  const node = treeNodeEl(name);
+  if (!node || !node.querySelector(":scope > .tree-children").children.length && on) return;
+  node.classList.toggle("expanded", on);
+  node.querySelector(":scope > .tree-row").setAttribute("aria-expanded", on);
+  if (on) expandedFolders.add(name); else expandedFolders.delete(name);
+  try { localStorage.setItem("marktool:expandedFolders", JSON.stringify([...expandedFolders])); } catch {}
+}
+
+// Expands every ancestor of a folder so its row is visible.
+function revealFolder(name) {
+  if (name === ".") return;
+  const parts = name.split("/");
+  setFolderExpanded(".", true);
+  for (let i = 1; i < parts.length; i++) setFolderExpanded(parts.slice(0, i).join("/"), true);
+}
+
+function renderTreeNode(node, depth) {
+  const el = document.createElement("div");
+  el.className = "tree-node" + (depth === 0 ? " tree-root" : "");
+  el.dataset.name = node.name;
+  const row = document.createElement("div");
+  row.className = "tree-row";
+  row.setAttribute("role", "treeitem");
+  row.dataset.name = node.name;
+  row.dataset.depth = depth;
+  row.style.paddingLeft = `${depth * 14}px`;
+  row.title = depth === 0 ? `${currentRoot}\n(library root)` : node.name;
+  const caret = document.createElement("span");
+  caret.className = "tree-caret" + (node.children.length ? "" : " leaf");
+  caret.textContent = "▶";
+  const label = document.createElement("span");
+  label.className = "tree-label";
+  label.textContent = node.label;
+  row.append(caret, label);
+  if (node.count) {
+    const count = document.createElement("span");
+    count.className = "tree-count";
+    count.textContent = node.count;
+    count.title = `${node.count} .stl file${node.count === 1 ? "" : "s"}`;
+    row.append(count);
+  }
+  const children = document.createElement("div");
+  children.className = "tree-children";
+  children.setAttribute("role", "group");
+  for (const child of node.children) children.appendChild(renderTreeNode(child, depth + 1));
+  el.append(row, children);
+  const open = node.children.length > 0 && expandedFolders.has(node.name);
+  el.classList.toggle("expanded", open);
+  if (node.children.length) row.setAttribute("aria-expanded", open);
+  return el;
+}
+
+function flattenTree(node, out = []) {
+  out.push(node);
+  for (const child of node.children) flattenTree(child, out);
+  return out;
+}
+
+projectTree.addEventListener("click", (e) => {
+  const row = e.target.closest(".tree-row");
+  if (!row) return;
+  const name = row.dataset.name;
+  if (e.target.closest(".tree-caret")) {
+    setFolderExpanded(name, !treeNodeEl(name).classList.contains("expanded"));
+    return;
+  }
+  projectSelect.pick(name);
+});
+
+projectTree.addEventListener("dblclick", (e) => {
+  const row = e.target.closest(".tree-row");
+  if (row && !e.target.closest(".tree-caret")) setFolderExpanded(row.dataset.name, !treeNodeEl(row.dataset.name).classList.contains("expanded"));
+});
+
+projectTree.addEventListener("keydown", (e) => {
+  if (e.target !== projectTree) return; // typing in the new-folder input
+  const visible = treeRows().filter((el) => el.offsetParent !== null);
+  const i = visible.findIndex((el) => el.dataset.name === projectSelect.value);
+  const cur = visible[i];
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    e.preventDefault();
+    const next = visible[Math.max(0, Math.min(visible.length - 1, i + (e.key === "ArrowDown" ? 1 : -1)))];
+    if (next) projectSelect.pick(next.dataset.name);
+  } else if (cur && (e.key === "ArrowRight" || e.key === "ArrowLeft")) {
+    e.preventDefault();
+    const name = cur.dataset.name;
+    const open = treeNodeEl(name).classList.contains("expanded");
+    if (e.key === "ArrowRight" && !open) setFolderExpanded(name, true);
+    else if (e.key === "ArrowLeft" && open) setFolderExpanded(name, false);
+    else if (e.key === "ArrowLeft" && name !== ".") projectSelect.pick(name.includes("/") ? name.slice(0, name.lastIndexOf("/")) : ".");
+  }
+});
+
+// --- Right-click menu: new sub-folder ------------------------------------------
+
+let menuTarget = null;
+
+function closeTreeMenu() {
+  treeMenu.hidden = true;
+  if (menuTarget) treeNodeEl(menuTarget)?.querySelector(":scope > .tree-row").classList.remove("menu-target");
+  menuTarget = null;
+}
+
+projectTree.addEventListener("contextmenu", (e) => {
+  const row = e.target.closest(".tree-row");
+  if (!row) return;
+  e.preventDefault();
+  closeTreeMenu();
+  menuTarget = row.dataset.name;
+  row.classList.add("menu-target");
+  treeMenu.hidden = false;
+  const { width, height } = treeMenu.getBoundingClientRect();
+  treeMenu.style.left = `${Math.min(e.clientX, window.innerWidth - width - 4)}px`;
+  treeMenu.style.top = `${Math.min(e.clientY, window.innerHeight - height - 4)}px`;
+});
+
+treeMenu.addEventListener("click", (e) => {
+  const action = e.target.closest("button")?.dataset.action;
+  const target = menuTarget;
+  closeTreeMenu();
+  if (action === "new-folder" && target) startNewFolder(target);
+});
+window.addEventListener("mousedown", (e) => { if (!treeMenu.hidden && !treeMenu.contains(e.target)) closeTreeMenu(); });
+window.addEventListener("keydown", (e) => { if (e.key === "Escape" && !treeMenu.hidden) closeTreeMenu(); });
+window.addEventListener("blur", closeTreeMenu);
+
+// Inline name box as the parent's first child; Enter creates the folder and
+// selects it, Esc or clicking away cancels.
+function startNewFolder(parent) {
+  projectTree.querySelector(".tree-new")?.remove();
+  const node = treeNodeEl(parent);
+  if (!node) return;
+  node.classList.add("expanded");
+  const depth = Number(node.querySelector(":scope > .tree-row").dataset.depth) + 1;
+  const row = document.createElement("div");
+  row.className = "tree-new";
+  row.style.paddingLeft = `${depth * 14 + 18}px`;
+  const input = document.createElement("input");
+  input.type = "text";
+  input.placeholder = "New folder name";
+  input.spellcheck = false;
+  row.appendChild(input);
+  const children = node.querySelector(":scope > .tree-children");
+  children.prepend(row);
+  input.focus();
+
+  let busy = false;
+  const cancel = () => {
+    row.remove();
+    if (!children.querySelector(".tree-node")) node.classList.remove("expanded");
+  };
+  input.addEventListener("keydown", async (e) => {
+    e.stopPropagation(); // keep typing out of the viewport shortcuts
+    if (e.key === "Escape") { cancel(); projectTree.focus(); return; }
+    if (e.key !== "Enter" || busy) return;
+    const name = input.value.trim();
+    if (!name) { cancel(); return; }
+    busy = true;
+    try {
+      const res = await fetch("/api/folder/new", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ parent, name }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      setFolderExpanded(parent, true);
+      await populateProjectSelect(projectSelect.value);
+      await projectSelect.pick(data.name);
+      setStatus(`Created folder ${data.name}.`);
+    } catch (err) {
+      busy = false;
+      setStatus(`Couldn't create folder: ${err.message}`, false);
+      input.focus();
+    }
+  });
+  input.addEventListener("blur", () => { if (!busy) cancel(); });
+}
 // Scrollable model list with a <select>-like interface (value, onchange),
 // so the rest of the app can treat it like the dropdown it replaced.
 const modelSelect = {
@@ -149,6 +368,7 @@ function encodePath(relpath) {
 
 function currentLabel() {
   if (!currentProject) return "";
+  if (!currentRelPath) return currentProject === "." ? "(library root)" : currentProject;
   return currentProject === "." ? currentRelPath : `${currentProject}/${currentRelPath}`;
 }
 
@@ -196,9 +416,10 @@ async function fetchRoot() {
   rootPathEl.title = data.root;
 }
 
-async function fetchProjects() {
-  const res = await fetch("/api/projects", { cache: "no-store" });
-  return res.json();
+async function fetchTree() {
+  const res = await fetch("/api/tree", { cache: "no-store" });
+  if (!res.ok) throw new Error(`Folder list failed (HTTP ${res.status}) — the server may be an older version; restart it`);
+  return (await res.json()).tree;
 }
 
 async function fetchModels(project) {
@@ -207,19 +428,18 @@ async function fetchModels(project) {
   return res.json();
 }
 
+// Renders the folder tree and selects `preserve` if it still exists, else the
+// first folder with models, else the root. Returns every folder (flat).
 async function populateProjectSelect(preserve) {
-  const projects = await fetchProjects();
-  projectSelect.innerHTML = "";
-  for (const p of projects) {
-    const opt = document.createElement("option");
-    opt.value = p.name;
-    opt.textContent = `${p.label} (${p.count})`;
-    projectSelect.appendChild(opt);
-  }
-  if (preserve && projects.some((p) => p.name === preserve)) {
-    projectSelect.value = preserve;
-  }
-  return projects;
+  const tree = await fetchTree();
+  projectTree.innerHTML = "";
+  projectSelect._value = "";
+  if (!tree) return [];
+  projectTree.appendChild(renderTreeNode(tree, 0));
+  const folders = flattenTree(tree);
+  const pick = folders.find((f) => f.name === preserve) || folders.find((f) => f.count) || tree;
+  projectSelect.value = pick.name;
+  return folders;
 }
 
 async function populateModelSelect(project, preserve) {
@@ -289,11 +509,8 @@ async function loadModel(project, relpath, keepCamera) {
   }
   geometry.computeVertexNormals();
 
-  if (mesh) {
-    scene.remove(mesh);
-    mesh.geometry.dispose();
-    mesh.material.dispose();
-  }
+  removeMesh();
+  noModelEl.hidden = true;
 
   const material = new THREE.MeshStandardMaterial({ color: 0xcfd3da, metalness: 0.05, roughness: 0.7 });
   mesh = new THREE.Mesh(geometry, material);
@@ -312,6 +529,34 @@ async function loadModel(project, relpath, keepCamera) {
   currentRelPath = relpath;
   updateUrl(project, relpath);
 }
+
+function removeMesh() {
+  if (!mesh) return;
+  scene.remove(mesh);
+  mesh.geometry.dispose();
+  mesh.material.dispose();
+  mesh = null;
+  faceData = null;
+}
+
+// A folder without .stl files (e.g. a just-created project): blank the
+// viewport behind a "No model" screen. The chat still targets the folder
+// (model ""), so it can generate a first model there.
+function showNoModel(project) {
+  if (project !== currentProject || currentRelPath !== "") {
+    window.dispatchEvent(new CustomEvent("marktool:model", { detail: { project, model: "" } }));
+  }
+  closeSlicer();
+  removeMesh();
+  rebuildEdges();
+  currentProject = project;
+  currentRelPath = "";
+  noModelEl.querySelector(".nm-folder").textContent = project === "." ? currentRoot : project;
+  noModelEl.hidden = false;
+  updateUrl(project, null);
+}
+
+document.getElementById("no-model-chat").onclick = () => window.dispatchEvent(new CustomEvent("marktool:focus-chat"));
 
 // --- View modes (toolbar): solid / x-ray / edges only ---------------------
 //
@@ -1307,6 +1552,8 @@ async function reloadProjectsAndModel() {
   if (relpath) {
     await loadModel(project, relpath, project === prevProject && relpath === prevModel);
     setStatus(`Reloaded ${currentLabel()}.`);
+  } else {
+    showNoModel(project);
   }
 }
 
@@ -1340,14 +1587,11 @@ async function setLibraryRoot(path) {
   toggleRootEditor(false);
   await fetchRoot();
   history.replaceState(null, "", location.pathname);
-  const projects = await populateProjectSelect(null);
-  if (!projects.length) {
-    modelList.innerHTML = '<div class="model-empty">No .stl files</div>';
-    setStatus("No .stl files found in the new library folder.", false);
-    return;
-  }
+  expandedFolders = new Set(["."]);
+  await populateProjectSelect(null);
   await populateModelSelect(projectSelect.value, null);
   if (modelSelect.value) await loadModel(projectSelect.value, modelSelect.value, false);
+  else showNoModel(projectSelect.value);
   setStatus(`Library folder set to ${data.root}.`);
 }
 
@@ -1395,19 +1639,17 @@ window.markTool = {
   snapshotDataUrl,
   camera: () => ({ position: r2(camera.position), target: r2(controls.target) }),
   reload: reloadProjectsAndModel,
-  // Used by the ⌘K search palette (search.js).
+  // Used by the ⌘K search palette (search.js) and the chat (a generated model).
   selectProject: async (project) => {
     projectSelect.value = project;
     if (projectSelect.value !== project) await populateProjectSelect(project);
     await projectSelect.onchange();
   },
   selectModel: async (project, model) => {
-    if (projectSelect.value !== project) {
-      projectSelect.value = project;
-      if (projectSelect.value !== project) await populateProjectSelect(project);
-    }
+    await populateProjectSelect(project); // refreshes the tree's file counts too
     await populateModelSelect(project, model);
     if (modelSelect.value) await loadModel(project, modelSelect.value, false);
+    else showNoModel(project);
   },
   clearMarks,
   setStatus,
@@ -1417,6 +1659,7 @@ window.dispatchEvent(new CustomEvent("marktool:ready"));
 projectSelect.onchange = async () => {
   await populateModelSelect(projectSelect.value, null);
   if (modelSelect.value) await loadModel(projectSelect.value, modelSelect.value, false);
+  else showNoModel(projectSelect.value);
 };
 
 modelSelect.onchange = async () => {
@@ -1431,16 +1674,22 @@ modelSelect.onchange = async () => {
   const wantProject = urlParams.get("project");
   const wantModel = urlParams.get("model");
 
-  const projects = await populateProjectSelect(wantProject);
-  if (!projects.length) {
-    setStatus("No .stl files found under the configured library root.", false);
+  let folders;
+  try {
+    folders = await populateProjectSelect(wantProject);
+  } catch (err) {
+    projectTree.innerHTML = `<div class="model-empty" style="padding:5px 7px;color:#e08a8a">${err.message}</div>`;
+    return;
+  }
+  if (!folders.length) {
+    setStatus("The configured library folder doesn't exist — click Change… to pick one.", false);
     return;
   }
   const models = await populateModelSelect(projectSelect.value, wantModel);
   if (models.length) {
     await loadModel(projectSelect.value, modelSelect.value, false);
   } else {
-    setStatus("Selected project has no .stl files.", false);
+    showNoModel(projectSelect.value);
   }
 })();
 

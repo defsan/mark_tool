@@ -7,7 +7,8 @@ Point it at a folder of model projects, open an `.stl`, and annotate it with **p
 
 ## Features
 
-- **Library browser**: every folder under your models folder that contains `.stl` files becomes a project; models are listed newest first. ⌘K / Ctrl+K searches all folders and files.
+- **Library browser**: the models folder is shown as a folder tree (the root node is the models folder itself); each folder is a project; models are listed newest first. ⌘K / Ctrl+K searches all folders and files.
+- **New projects**: right-click any folder in the tree → **New sub-folder…**. An empty folder shows a *No model* screen; describe the part in the AI chat and it writes an OpenSCAD source + STL into that folder, then opens it (the conversation carries on with the new model).
 - **Marks**
   - **Pin**: a single point (x, y, z).
   - **Face**: click a face to select the whole flat/coplanar region (adjustable tolerance); gives centroid, normal, area.
